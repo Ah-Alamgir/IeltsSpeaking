@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IELTS Speaking WebRTC Engine</title>
+    <script src="peerjs.min.js"></script>
+    <script src="mqtt.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #0f172a; color: #f8fafc; padding: 20px; text-align: center; }
+        .status { margin-top: 15px; font-weight: bold; color: #38bdf8; }
+    </style>
+</head>
+<body>
+    <h3>IELTS Audio Call Engine</h3>
+    <div id="status" class="status">Initializing WebRTC...</div>
+    <audio id="remoteAudio" autoplay playsinline></audio>
+
+    <script>
+        let peer = null;
+        let currentCall = null;
+        let activeDataConn = null;
+        let localStream = null;
+        let myPeerId = null;
+        let mqttClient = null;
+        let isOnCallPage = false;
+        let isSearchingRandom = false;
+        let searchInterval = null;
+
+        // Matchmaking queue state
+        let callAttempting = null;
+        let callAttemptTimer = null;
+        const availablePeers = new Map();
+        const candidateBlacklist = new Map();
+        // Partners from just-ended calls: never auto-rematch with them during the cooldown window
+        const recentPartnerCooldown = new Map();
+        const RECENT_PARTNER_COOLDOWN_MS = 10 * 60 * 1000;
+
+        function markPartnerAsRecent(pid) {
+            if (pid) recentPartnerCooldown.set(pid, Date.now());
+        }
+
+        function isRecentPartner(pid) {
+            const t = recentPartnerCooldown.get(pid);
+            if (!t) return false;
+            if (Date.now() - t > RECENT_PARTNER_COOLDOWN_MS) {
+                recentPartnerCooldown.delete(pid);
+                return false;
+            }
+            return true;
+        }
+
+        const LOBBY_TOPIC = "ielts/speaking/match_lobby_v1";
+
+        function notifyNative(event, data) {
+            if (window.AndroidBridge && window.AndroidBridge.onCallEvent) {
+                window.AndroidBridge.onCallEvent(event, JSON.stringify(data));
+            }
+            console.log("PeerJS Native Event:", event, data);
+        }
+
+        function updateStatus(msg) {
+            const el = document.getElementById('status');
+            if (el) el.innerText = msg;
+        }
+
+        function createSilentAudioStream() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const gain = ctx.createGain();
+                gain.gain.setValueAtTime(0, ctx.currentTime);
+                const dst = ctx.createMediaStreamDestination();
+                gain.connect(dst);
+                const track = dst.stream.getAudioTracks()[0];
+                if (track) track.enabled = false;
+                return dst.stream;
+            } catch(e) {
+                console.warn("Failed to create silent stream fallback:", e);
+                return null;
+            }
+        }
+
+        // Voice-optimized Audio Constraints with standard W3C echo cancellation, noise suppression, and AGC disabled to prevent screeching feedback loops
+        const CLEAN_AUDIO_CONSTRAINTS = {
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: false,
+                googEchoCancellation: true,
+                googEchoCancellation2: true,
+                googNoiseSuppression: true,
+                googHighpassFilter: true,
+                googAutoGainControl: false,
+                googAutoGainControl2: false
+            },
+            video: false
+        };
+
+        const FALLBACK_AUDIO_CONSTRAINTS = {
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: false
+            },
+            video: false
+        };
+
+        // Opus SDP Optimizer: Enforces mono, discontinuous transmission (DTX to eliminate background noise during pauses), and forward error correction
+        function optimizeOpusSdp(sdp) {
+            if (!sdp) return sdp;
+            return sdp.replace(/a=fmtp:(\d+)(.*)/g, (line, pt, params) => {
+                if (sdp.includes(`a=rtpmap:${pt} opus/48000`)) {
+                    let p = params.trim();
+                    if (!p.includes('usedtx=')) p += ';usedtx=1';
+                    if (!p.includes('useinbandfec=')) p += ';useinbandfec=1';
+                    if (!p.includes('stereo=')) p += ';stereo=0';
+                    if (!p.includes('sprop-stereo=')) p += ';sprop-stereo=0';
+                    if (!p.includes('maxaveragebitrate=')) p += ';maxaveragebitrate=32000';
+                    if (!p.includes('cbr=')) p += ';cbr=0';
+                    return `a=fmtp:${pt} ${p}`;
+                }
+                return line;
+            });
+        }
+
+        if (window.RTCPeerConnection) {
+            const origCreateOffer = RTCPeerConnection.prototype.createOffer;
+            RTCPeerConnection.prototype.createOffer = function() {
+                const ret = origCreateOffer.apply(this, arguments);
+                if (ret && typeof ret.then === 'function') {
+                    return ret.then(offer => {
+                        if (offer && offer.sdp) {
+                            try {
+                                offer.sdp = optimizeOpusSdp(offer.sdp);
+                            } catch(e){}
+                        }
+                        return offer;
+                    });
+                }
+                return ret;
+            };
+
+            const origCreateAnswer = RTCPeerConnection.prototype.createAnswer;
+            RTCPeerConnection.prototype.createAnswer = function() {
+                const ret = origCreateAnswer.apply(this, arguments);
+                if (ret && typeof ret.then === 'function') {
+                    return ret.then(answer => {
+                        if (answer && answer.sdp) {
+                            try {
+                                answer.sdp = optimizeOpusSdp(answer.sdp);
+                            } catch(e){}
+                        }
+                        return answer;
+                    });
+                }
+                return ret;
+            };
+
+            const origSetLocalDescription = RTCPeerConnection.prototype.setLocalDescription;
+            RTCPeerConnection.prototype.setLocalDescription = function(desc) {
+                if (desc && desc.sdp) {
+                    try {
+                        const modified = {
+                            type: desc.type,
+                            sdp: optimizeOpusSdp(desc.sdp)
+                        };
+                        return origSetLocalDescription.call(this, modified);
+                    } catch(e) {
+                        console.warn("SDP local optimization failed:", e);
+                    }
+                }
+                return origSetLocalDescription.apply(this, arguments);
+            };
+
+            const origSetRemoteDescription = RTCPeerConnection.prototype.setRemoteDescription;
+            RTCPeerConnection.prototype.setRemoteDescription = function(desc) {
+                if (desc && desc.sdp) {
+                    try {
+                        const modified = {
+                            type: desc.type,
+                            sdp: optimizeOpusSdp(desc.sdp)
+                        };
+                        return origSetRemoteDescription.call(this, modified);
+                    } catch(e) {
+                        console.warn("SDP remote optimization failed:", e);
+                    }
+                }
+                return origSetRemoteDescription.apply(this, arguments);
+            };
+        }
+
+        async function acquireMicStream() {
+            if (typeof navigator !== 'undefined' && navigator.audioSession) {
+                try {
+                    navigator.audioSession.type = 'play-and-record';
+                } catch(e) {}
+            }
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                let stream = null;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia(CLEAN_AUDIO_CONSTRAINTS);
+                } catch (err) {
+                    console.warn("Clean audio constraints rejected, trying fallback:", err);
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia(FALLBACK_AUDIO_CONSTRAINTS);
+                    } catch (err2) {
+                        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                    }
+                }
+                if (stream) {
+                    stream.getAudioTracks().forEach(track => {
+                        track.enabled = true;
+                    });
+                    return stream;
+                }
+            }
+            return null;
+        }
+
+        // Sender-side noise gate: the mic (already AEC/NS processed by getUserMedia) is passed through a
+        // gate so that when the local user stops talking, digital silence is transmitted. This lets Opus DTX
+        // idle cleanly instead of sending residual mic noise / noise-suppressor artifacts (heard as a loud
+        // hiss by the partner right after speech ends). Only the LOCAL mic is processed here; the remote
+        // stream is still attached raw to <audio id="remoteAudio"> (native AEC/NS preserved).
+        let rawLocalStream = null;
+        let gateTimer = null;
+        let gateCtx = null;
+
+        async function buildGatedStream(rawStream) {
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) return rawStream;
+                const ctx = new AC();
+                if (ctx.state !== 'running') {
+                    try {
+                        await Promise.race([ctx.resume(), new Promise(r => setTimeout(r, 600))]);
+                    } catch(e) {}
+                }
+                if (ctx.state !== 'running') {
+                    try { ctx.close(); } catch(e) {}
+                    return rawStream;
+                }
+                const src = ctx.createMediaStreamSource(rawStream);
+                const hp = ctx.createBiquadFilter();
+                hp.type = 'highpass';
+                hp.frequency.value = 90;
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = 1024;
+                const lookahead = ctx.createDelay(0.1);
+                lookahead.delayTime.value = 0.03;
+                const gate = ctx.createGain();
+                gate.gain.value = 0;
+                const dst = ctx.createMediaStreamDestination();
+
+                src.connect(hp);
+                hp.connect(analyser);
+                hp.connect(lookahead);
+                lookahead.connect(gate);
+                gate.connect(dst);
+
+                const buf = new Float32Array(analyser.fftSize);
+                const OPEN_RMS = 0.006;
+                const CLOSE_RMS = 0.004;
+                const HOLD_MS = 500;
+                let isOpen = false;
+                let lastLoud = 0;
+
+                if (gateTimer) clearInterval(gateTimer);
+                if (gateCtx && gateCtx !== ctx) { try { gateCtx.close(); } catch(e) {} }
+                gateCtx = ctx;
+
+                gateTimer = setInterval(() => {
+                    if (ctx.state === 'suspended') { try { ctx.resume(); } catch(e) {} }
+                    if (document.hidden) {
+                        if (!isOpen) { gate.gain.setTargetAtTime(1, ctx.currentTime, 0.01); isOpen = true; }
+                        return;
+                    }
+                    analyser.getFloatTimeDomainData(buf);
+                    let sum = 0;
+                    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+                    const rms = Math.sqrt(sum / buf.length);
+                    const now = performance.now();
+                    if (rms >= (isOpen ? CLOSE_RMS : OPEN_RMS)) lastLoud = now;
+                    const shouldOpen = (now - lastLoud) < HOLD_MS;
+                    if (shouldOpen !== isOpen) {
+                        isOpen = shouldOpen;
+                        gate.gain.setTargetAtTime(isOpen ? 1 : 0, ctx.currentTime, isOpen ? 0.008 : 0.08);
+                    }
+                }, 20);
+
+                if (!dst.stream.getAudioTracks()[0]) return rawStream;
+                return dst.stream;
+            } catch (e) {
+                console.warn("Noise gate setup failed, using raw mic:", e);
+                return rawStream;
+            }
+        }
+
+        async function ensureLocalStream() {
+            if (localStream && localStream.getAudioTracks().length > 0 && rawLocalStream) {
+                const rawTrack = rawLocalStream.getAudioTracks()[0];
+                if (rawTrack && rawTrack.readyState === 'live') {
+                    return localStream;
+                }
+            }
+            try {
+                const micStream = await acquireMicStream();
+                if (micStream) {
+                    rawLocalStream = micStream;
+                    localStream = await buildGatedStream(rawLocalStream);
+                    return localStream;
+                }
+            } catch (e) {
+                console.warn("ensureLocalStream could not acquire mic:", e);
+            }
+            if (!localStream) {
+                localStream = createSilentAudioStream();
+            }
+            return localStream;
+        }
+
+        async function initPeer(customId) {
+            console.log("initPeer called with ID:", customId);
+            if (peer && myPeerId === customId && !peer.destroyed) {
+                console.log("Peer already initialized with ID:", customId, "- ensuring mic stream");
+                await ensureLocalStream();
+                return;
+            }
+
+            // Cleanup any existing peer or tracks
+            if (peer && !peer.destroyed) {
+                try { peer.destroy(); } catch(e){}
+                peer = null;
+            }
+            if (localStream) {
+                try { localStream.getTracks().forEach(t => t.stop()); } catch(e){}
+                localStream = null;
+            }
+
+            try {
+                const micStream = await acquireMicStream();
+                if (micStream) {
+                    rawLocalStream = micStream;
+                    localStream = await buildGatedStream(rawLocalStream);
+                    updateStatus("Microphone access granted (AEC + Noise Suppression Active).");
+                } else {
+                    localStream = createSilentAudioStream();
+                }
+            } catch (err) {
+                console.warn("Audio stream acquisition warning:", err);
+                localStream = createSilentAudioStream();
+            }
+
+            try {
+                const options = {
+                    debug: 1,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' },
+                            { urls: 'stun:stun3.l.google.com:19302' },
+                            { urls: 'stun:global.stun.twilio.com:3478' }
+                        ]
+                    }
+                };
+
+                peer = customId ? new Peer(customId, options) : new Peer(options);
+
+                peer.on('open', (id) => {
+                    myPeerId = id;
+                    updateStatus("Connected. Peer ID: " + id);
+                    notifyNative("ON_OPEN", { peerId: id });
+                    initMatchmakingClient();
+                    if (mqttClient && mqttClient.connected) {
+                        try { mqttClient.subscribe('ielts/dm/' + id); } catch(e){}
+                    }
+                });
+
+                peer.on('call', async (call) => {
+                    console.log("Incoming WebRTC call from:", call.peer);
+                    if (currentCall) {
+                        console.log("Already in active call, ignoring duplicate call from", call.peer);
+                        try { call.close(); } catch(e){}
+                        return;
+                    }
+                    if (!isOnCallPage) {
+                        console.log("Rejecting call because user is not on Live Call page:", call.peer);
+                        try { call.close(); } catch(e){}
+                        return;
+                    }
+                    if (isRecentPartner(call.peer)) {
+                        console.log("Rejecting incoming call from previous partner (cooldown):", call.peer);
+                        try { call.close(); } catch(e){}
+                        return;
+                    }
+                    updateStatus("Incoming call from " + call.peer);
+                    currentCall = call;
+                    callAttempting = call.peer;
+                    if (callAttemptTimer) clearTimeout(callAttemptTimer);
+                    localStream = await ensureLocalStream();
+                    call.answer(localStream);
+                    setupCallListeners(call);
+                });
+
+                peer.on('connection', (conn) => {
+                    setupDataConnection(conn);
+                });
+
+                peer.on('error', (err) => {
+                    console.error("Peer error:", err);
+                    if (currentCall) {
+                        console.warn("Ignoring non-fatal peer error during active call:", err);
+                        return;
+                    }
+                    if (isSearchingRandom) {
+                        console.warn("Non-fatal peer error during matchmaking:", err.type || err.message);
+                        if (callAttempting) {
+                            candidateBlacklist.set(callAttempting, Date.now());
+                            callAttempting = null;
+                        }
+                        if (currentCall) {
+                            try { currentCall.close(); } catch(e){}
+                            currentCall = null;
+                        }
+                        if (callAttemptTimer) clearTimeout(callAttemptTimer);
+                        updateStatus("Searching for partner...");
+                        setTimeout(evaluateMatchmakingCandidates, 1200);
+                        return;
+                    }
+                    updateStatus("Peer error: " + (err.type || err.message));
+                    notifyNative("ON_ERROR", { error: err.message || err.type });
+                });
+
+                peer.on('close', () => {
+                    updateStatus("Peer connection closed.");
+                    notifyNative("ON_CLOSE", {});
+                });
+            } catch (peerErr) {
+                console.error("Peer init failed:", peerErr);
+                notifyNative("ON_ERROR", { error: peerErr.message || peerErr.toString() });
+            }
+        }
+
+        let activeCallTopic = null;
+        let processedCallMsgIds = new Set();
+
+        function subscribeCallTopic(partnerId) {
+            if (!mqttClient || !myPeerId || !partnerId) return;
+            activeCallTopic = "ielts/call_chat/" + [myPeerId, partnerId].sort().join('_');
+            try {
+                mqttClient.subscribe(activeCallTopic);
+                console.log("Subscribed to call chat topic:", activeCallTopic);
+            } catch (e) {}
+        }
+
+        function unsubscribeCallTopic() {
+            if (activeCallTopic && mqttClient) {
+                try {
+                    mqttClient.unsubscribe(activeCallTopic);
+                } catch (e) {}
+                activeCallTopic = null;
+            }
+        }
+
+        function processRemoteStream(remoteStream) {
+            const remoteAudio = document.getElementById('remoteAudio');
+            if (!remoteAudio) return;
+            try {
+                // Attach raw WebRTC stream directly to <audio> element
+                // Crucial for native Acoustic Echo Cancellation (AEC) and Noise Suppression (NS)
+                remoteAudio.srcObject = remoteStream;
+                remoteAudio.volume = 1.0;
+                remoteAudio.setAttribute('playsinline', 'true');
+                const playPromise = remoteAudio.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => {
+                        console.log("Audio play error, retrying on touch:", e);
+                        const unlock = () => {
+                            remoteAudio.play().catch(err => console.log("Unlock retry failed:", err));
+                            window.removeEventListener('touchstart', unlock);
+                            window.removeEventListener('click', unlock);
+                        };
+                        window.addEventListener('touchstart', unlock, { once: true });
+                        window.addEventListener('click', unlock, { once: true });
+                    });
+                }
+            } catch (err) {
+                console.warn("Direct stream assignment error:", err);
+            }
+        }
+
+        function cleanupAudioProcessing() {
+            const remoteAudio = document.getElementById('remoteAudio');
+            if (remoteAudio) {
+                try {
+                    remoteAudio.pause();
+                    remoteAudio.srcObject = null;
+                } catch(e){}
+            }
+        }
+
+        async function callPeer(targetPeerId) {
+            console.log("callPeer triggered for target:", targetPeerId);
+            if (!peer) {
+                updateStatus("WebRTC Engine connecting... please try in a moment.");
+                notifyNative("ON_ERROR", { error: "Peer engine is connecting. Please retry in 2 seconds." });
+                return;
+            }
+            localStream = await ensureLocalStream();
+            updateStatus("Calling " + targetPeerId + "...");
+            subscribeCallTopic(targetPeerId);
+
+            try {
+                const call = peer.call(targetPeerId, localStream);
+                if (call) {
+                    currentCall = call;
+                    setupCallListeners(call);
+                }
+            } catch (e) {
+                console.error("Error during peer.call:", e);
+                if (!isSearchingRandom) {
+                    notifyNative("ON_ERROR", { error: "Call failed: " + e.message });
+                }
+            }
+
+            try {
+                const conn = peer.connect(targetPeerId);
+                if (conn) {
+                    setupDataConnection(conn);
+                }
+            } catch (e) {
+                console.error("Error during peer.connect:", e);
+            }
+        }
+
+        function setupCallListeners(call) {
+            call.on('stream', (remoteStream) => {
+                console.log("WebRTC stream received from:", call.peer);
+                updateStatus("Connected! Audio active (filtered).");
+                if (callAttemptTimer) clearTimeout(callAttemptTimer);
+                callAttempting = null;
+                subscribeCallTopic(call.peer);
+                processRemoteStream(remoteStream);
+                stopRandomMatch();
+                broadcastPresence('IN_CALL');
+                notifyNative("ON_CONNECTED", { peerId: call.peer });
+            });
+
+            call.on('close', () => {
+                updateStatus("Call ended.");
+                cleanupAudioProcessing();
+                unsubscribeCallTopic();
+                if (call.peer) markPartnerAsRecent(call.peer);
+                if (callAttemptTimer) clearTimeout(callAttemptTimer);
+                callAttempting = null;
+                currentCall = null;
+                notifyNative("ON_DISCONNECTED", {});
+                if (isOnCallPage) {
+                    setTimeout(() => {
+                        if (isOnCallPage && !currentCall) {
+                            startRandomMatch();
+                        }
+                    }, 400);
+                } else {
+                    broadcastPresence('OFF_CALL_PAGE');
+                }
+            });
+
+            call.on('error', (err) => {
+                console.error("Call error listener:", err);
+                cleanupAudioProcessing();
+                unsubscribeCallTopic();
+                if (callAttempting) {
+                    candidateBlacklist.set(callAttempting, Date.now());
+                    callAttempting = null;
+                }
+                if (callAttemptTimer) clearTimeout(callAttemptTimer);
+                currentCall = null;
+                if (isOnCallPage && isSearchingRandom) {
+                    updateStatus("Searching for partner...");
+                    setTimeout(evaluateMatchmakingCandidates, 1000);
+                    return;
+                }
+                updateStatus("Call error: " + err);
+                notifyNative("ON_ERROR", { error: err.toString() });
+            });
+        }
+
+        function setupDataConnection(conn) {
+            activeDataConn = conn;
+            conn.on('data', (data) => {
+                if (data && data.type === 'HANGUP') {
+                    console.log("Received HANGUP via data connection");
+                    hangup(false);
+                    return;
+                }
+                if (data && data.type === 'CHAT_MSG') {
+                    if (data.msgId && processedCallMsgIds.has(data.msgId)) return;
+                    if (data.msgId) processedCallMsgIds.add(data.msgId);
+                    notifyNative("ON_CHAT_MESSAGE", {
+                        sender: data.sender || "Partner",
+                        text: data.text || "",
+                        time: data.time || ""
+                    });
+                }
+            });
+            conn.on('close', () => {
+                console.log("Data connection closed by remote partner");
+                hangup(false);
+            });
+        }
+
+        function sendInCallMsg(sender, text, time) {
+            const msgId = 'callmsg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+            processedCallMsgIds.add(msgId);
+
+            if (activeDataConn && activeDataConn.open) {
+                try {
+                    activeDataConn.send({
+                        msgId: msgId,
+                        type: 'CHAT_MSG',
+                        sender: sender,
+                        text: text,
+                        time: time
+                    });
+                } catch (e) {}
+            }
+
+            if (mqttClient && mqttClient.connected && activeCallTopic) {
+                try {
+                    mqttClient.publish(activeCallTopic, JSON.stringify({
+                        msgId: msgId,
+                        senderId: myPeerId,
+                        senderName: sender,
+                        text: text,
+                        time: time
+                    }));
+                } catch (e) {}
+            }
+        }
+
+        function sendDirectDm(targetPeerId, text, time, senderName, senderBand, senderCountry) {
+            if (mqttClient && mqttClient.connected && targetPeerId) {
+                try {
+                    mqttClient.publish('ielts/dm/' + targetPeerId, JSON.stringify({
+                        senderId: myPeerId,
+                        senderName: senderName || 'Practice Partner',
+                        senderBand: senderBand || 'Band 7.5+',
+                        senderCountry: senderCountry || 'Global',
+                        text: text,
+                        time: time,
+                        timestamp: Date.now()
+                    }));
+                } catch(e) {}
+            }
+        }
+
+        function toggleMute(isMuted) {
+            if (localStream) {
+                localStream.getAudioTracks().forEach(track => {
+                    track.enabled = !isMuted;
+                });
+                notifyNative("ON_MUTE_CHANGED", { muted: isMuted });
+            }
+        }
+
+        function sendHangupSignal() {
+            const payload = {
+                type: 'HANGUP',
+                senderId: myPeerId,
+                timestamp: Date.now()
+            };
+            if (activeDataConn && activeDataConn.open) {
+                try {
+                    activeDataConn.send(payload);
+                } catch (e) {}
+            }
+            if (mqttClient && mqttClient.connected && activeCallTopic) {
+                try {
+                    mqttClient.publish(activeCallTopic, JSON.stringify(payload));
+                } catch (e) {}
+            }
+        }
+
+        function hangup(shouldBroadcast = true) {
+            if (currentCall && currentCall.peer) {
+                markPartnerAsRecent(currentCall.peer);
+            }
+            if (shouldBroadcast) {
+                sendHangupSignal();
+            }
+            cleanupAudioProcessing();
+            setTimeout(() => {
+                if (currentCall) {
+                    try { currentCall.close(); } catch(e) {}
+                    currentCall = null;
+                }
+                if (activeDataConn) {
+                    try { activeDataConn.close(); } catch(e) {}
+                    activeDataConn = null;
+                }
+                callAttempting = null;
+                if (callAttemptTimer) clearTimeout(callAttemptTimer);
+                unsubscribeCallTopic();
+                processedCallMsgIds.clear();
+                updateStatus("Call terminated.");
+                notifyNative("ON_DISCONNECTED", {});
+
+                if (isOnCallPage) {
+                    setTimeout(() => {
+                        if (isOnCallPage && !currentCall) {
+                            startRandomMatch();
+                        }
+                    }, 400);
+                } else {
+                    broadcastPresence('OFF_CALL_PAGE');
+                }
+            }, 80);
+        }
+
+        /* ---------------------------------------------------------
+           MULTI-PEER AUTOMATIC MATCHMAKING ENGINE (LOBBY PRESENCE)
+        --------------------------------------------------------- */
+        function notifyCandidateCount() {
+            const count = availablePeers.size;
+            notifyNative("ON_CANDIDATE_COUNT", { count: count });
+        }
+
+        function initMatchmakingClient() {
+            try {
+                if (typeof mqtt === 'undefined') {
+                    setTimeout(initMatchmakingClient, 300);
+                    return;
+                }
+                mqttClient = mqtt.connect("wss://broker.hivemq.com:8884/mqtt", {
+                    clientId: 'ielts_app_' + Math.random().toString(16).substring(2, 8),
+                    clean: true,
+                    keepalive: 30
+                });
+
+                mqttClient.on('connect', () => {
+                    mqttClient.subscribe(LOBBY_TOPIC);
+                    console.log("Connected to global matchmaking lobby!");
+                    if (myPeerId) {
+                        try { mqttClient.subscribe('ielts/dm/' + myPeerId); } catch(e){}
+                    }
+                    if (isOnCallPage && isSearchingRandom && !currentCall) {
+                        broadcastPresence('SEARCHING');
+                        evaluateMatchmakingCandidates();
+                    }
+                });
+
+                mqttClient.on('message', (topic, payload) => {
+                    if (myPeerId && topic === ('ielts/dm/' + myPeerId)) {
+                        try {
+                            const data = JSON.parse(payload.toString());
+                            if (data.senderId === myPeerId) return;
+                            notifyNative("ON_DIRECT_MESSAGE", {
+                                senderId: data.senderId,
+                                senderName: data.senderName || ("Partner (" + (data.senderId ? data.senderId.slice(-4) : "Peer") + ")"),
+                                senderCountry: data.senderCountry || "Global",
+                                senderBand: data.senderBand || "Band 7.5+",
+                                text: data.text || "",
+                                time: data.time || ""
+                            });
+                        } catch (e) {}
+                        return;
+                    }
+
+                    if (activeCallTopic && topic === activeCallTopic) {
+                        try {
+                            const data = JSON.parse(payload.toString());
+                            if (data.senderId === myPeerId) return;
+                            if (data.type === 'HANGUP') {
+                                console.log("Received HANGUP via MQTT");
+                                hangup(false);
+                                return;
+                            }
+                            if (data.msgId && processedCallMsgIds.has(data.msgId)) return;
+                            if (data.msgId) processedCallMsgIds.add(data.msgId);
+                            notifyNative("ON_CHAT_MESSAGE", {
+                                sender: data.senderName || "Partner",
+                                text: data.text || "",
+                                time: data.time || ""
+                            });
+                        } catch (e) {}
+                        return;
+                    }
+
+                    if (topic !== LOBBY_TOPIC) return;
+                    try {
+                        const msg = JSON.parse(payload.toString());
+                        if (!msg.peerId || msg.peerId === myPeerId) return;
+
+                        if (msg.type === 'MATCH_CLAIM') {
+                            if (msg.to === myPeerId) {
+                                console.log("Remote peer", msg.from, "is claiming us. Expecting incoming call.");
+                                callAttempting = msg.from;
+                                updateStatus("Connecting with candidate: " + msg.from);
+                                if (callAttemptTimer) clearTimeout(callAttemptTimer);
+                                callAttemptTimer = setTimeout(() => {
+                                    if (callAttempting === msg.from && isSearchingRandom && (!currentCall || !currentCall.open)) {
+                                        console.warn("Incoming call from " + msg.from + " timed out. Returning to search.");
+                                        candidateBlacklist.set(msg.from, Date.now());
+                                        callAttempting = null;
+                                        updateStatus("Searching for speaking partners...");
+                                        evaluateMatchmakingCandidates();
+                                    }
+                                }, 5000);
+                            } else {
+                                candidateBlacklist.set(msg.to, Date.now());
+                            }
+                            return;
+                        }
+
+                        const isBusy = (
+                            msg.status === 'BUSY' || 
+                            msg.status === 'IN_CALL' || 
+                            msg.inCall === true || 
+                            msg.status === 'OFF_CALL_PAGE' || 
+                            msg.page === 'other' || 
+                            msg.type === 'LEAVE_CALL_PAGE'
+                        );
+
+                        if (isBusy) {
+                            availablePeers.delete(msg.peerId);
+                            notifyCandidateCount();
+                            if (callAttempting === msg.peerId && !currentCall) {
+                                callAttempting = null;
+                                if (callAttemptTimer) clearTimeout(callAttemptTimer);
+                                evaluateMatchmakingCandidates();
+                            }
+                            return;
+                        }
+
+                        // Eligible candidate: must be on Live Call page, available/searching, and not in a call
+                        const isEligible = (
+                            (msg.status === 'AVAILABLE' || msg.status === 'SEARCHING' || msg.type === 'WAITING') &&
+                            msg.inCall !== true &&
+                            (msg.page === 'call' || !msg.page)
+                        );
+
+                        if (isEligible) {
+                            availablePeers.set(msg.peerId, {
+                                status: 'AVAILABLE',
+                                peerId: msg.peerId,
+                                page: 'call',
+                                inCall: false,
+                                name: msg.name || 'Candidate',
+                                band: msg.targetBand || msg.band || 'Band 7.5',
+                                country: msg.country || 'Global',
+                                lastSeen: Date.now()
+                            });
+                            notifyCandidateCount();
+                            evaluateMatchmakingCandidates();
+                        }
+                    } catch (e) {}
+                });
+            } catch (err) {
+                console.warn("MQTT Matchmaker unavailable:", err);
+            }
+        }
+
+        function evaluateMatchmakingCandidates() {
+            if (!isOnCallPage || !isSearchingRandom || currentCall || callAttempting || !myPeerId || !peer || peer.destroyed) return;
+
+            const now = Date.now();
+            // Prune expired peers (> 6 seconds without heartbeat)
+            for (const [pid, data] of availablePeers.entries()) {
+                if (now - data.lastSeen > 6000 || data.inCall === true || data.status === 'BUSY') {
+                    availablePeers.delete(pid);
+                }
+            }
+            // Prune blacklist (> 8 seconds)
+            for (const [pid, time] of candidateBlacklist.entries()) {
+                if (now - time > 8000) {
+                    candidateBlacklist.delete(pid);
+                }
+            }
+
+            notifyCandidateCount();
+
+            // Find eligible candidate peers on the live call page:
+            // Deterministic pairing: smaller ID initiates call to larger ID
+            const candidates = [];
+            for (const [pid, data] of availablePeers.entries()) {
+                if (pid !== myPeerId && !candidateBlacklist.has(pid) && !isRecentPartner(pid) && data.status === 'AVAILABLE') {
+                    if (myPeerId < pid) {
+                        candidates.push({ peerId: pid, ...data });
+                    }
+                }
+            }
+
+            if (candidates.length === 0) return;
+
+            // Sort by most recently active
+            candidates.sort((a, b) => b.lastSeen - a.lastSeen);
+            const target = candidates[0];
+
+            console.log("Candidate selected on live call page! Auto-calling:", target.peerId);
+            callAttempting = target.peerId;
+            updateStatus("Connecting with candidate: " + target.peerId);
+
+            // Broadcast claim to lobby so other peers do not collide
+            if (mqttClient && mqttClient.connected) {
+                try {
+                    mqttClient.publish(LOBBY_TOPIC, JSON.stringify({
+                        type: 'MATCH_CLAIM',
+                        from: myPeerId,
+                        to: target.peerId,
+                        timestamp: now
+                    }));
+                } catch(e) {}
+            }
+
+            callPeer(target.peerId);
+
+            // If not connected in 5s, blacklist target and try next candidate
+            if (callAttemptTimer) clearTimeout(callAttemptTimer);
+            callAttemptTimer = setTimeout(() => {
+                if (callAttempting === target.peerId && isSearchingRandom && (!currentCall || !currentCall.open)) {
+                    console.warn("Call to " + target.peerId + " timed out. Trying next candidate.");
+                    candidateBlacklist.set(target.peerId, Date.now());
+                    callAttempting = null;
+                    if (currentCall) {
+                        try { currentCall.close(); } catch(e){}
+                        currentCall = null;
+                    }
+                    evaluateMatchmakingCandidates();
+                }
+            }, 5000);
+        }
+
+        function enterCallPage() {
+            isOnCallPage = true;
+            startRandomMatch();
+        }
+
+        function leaveCallPage() {
+            isOnCallPage = false;
+            stopRandomMatch();
+            broadcastPresence('OFF_CALL_PAGE');
+            availablePeers.clear();
+            notifyCandidateCount();
+        }
+
+        function startRandomMatch() {
+            isOnCallPage = true;
+            isSearchingRandom = true;
+            callAttempting = null;
+            broadcastPresence('SEARCHING');
+            evaluateMatchmakingCandidates();
+            if (searchInterval) clearInterval(searchInterval);
+            searchInterval = setInterval(() => {
+                if (isOnCallPage && isSearchingRandom && !currentCall) {
+                    broadcastPresence('SEARCHING');
+                    evaluateMatchmakingCandidates();
+                }
+            }, 2000);
+        }
+
+        function broadcastPresence(status = 'SEARCHING') {
+            if (!myPeerId || !mqttClient || !mqttClient.connected) return;
+            const now = Date.now();
+            const inCall = (currentCall !== null && currentCall.open);
+            const page = isOnCallPage ? 'call' : 'other';
+            const finalStatus = inCall ? 'IN_CALL' : (isOnCallPage ? (isSearchingRandom ? 'SEARCHING' : 'READY') : 'OFF_CALL_PAGE');
+
+            try {
+                mqttClient.publish(LOBBY_TOPIC, JSON.stringify({
+                    type: 'PRESENCE',
+                    status: finalStatus,
+                    page: page,
+                    inCall: inCall,
+                    peerId: myPeerId,
+                    timestamp: now
+                }));
+                if (finalStatus === 'SEARCHING') {
+                    mqttClient.publish(LOBBY_TOPIC, JSON.stringify({
+                        type: 'WAITING',
+                        status: 'AVAILABLE',
+                        page: 'call',
+                        inCall: false,
+                        peerId: myPeerId,
+                        timestamp: now
+                    }));
+                }
+            } catch (e) {}
+        }
+
+        function stopRandomMatch() {
+            isSearchingRandom = false;
+            callAttempting = null;
+            if (callAttemptTimer) {
+                clearTimeout(callAttemptTimer);
+                callAttemptTimer = null;
+            }
+            if (searchInterval) {
+                clearInterval(searchInterval);
+                searchInterval = null;
+            }
+        }
+    </script>
+</body>
+</html>

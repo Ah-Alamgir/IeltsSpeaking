@@ -1,0 +1,571 @@
+<div class='phone-frame-envelope'>
+    <!-- TOP PROGRESS LOADER -->
+    <div id='top-page-loader' class='top-loader-bar active'></div>
+
+    <!-- MAIN MODERN SCHOLASTIC APP HEADER -->
+    <header class='app-header'>
+        <div class='header-container'>
+            <div class='brand-section'>
+                <div class='brand-icon-box'>
+                    <span class='material-symbols-outlined text-[22px]' style="font-variation-settings: 'FILL' 1;">record_voice_over</span>
+                </div>
+                <div class='brand-info'>
+                    <div class='brand-title-row'>
+                        <h1 class='brand-title'>IELTS Speaking</h1>
+                        <span class='streak-badge'>
+                            <span class='material-symbols-outlined text-[14px]' style="color:var(--streak-amber); font-variation-settings: 'FILL' 1;">local_fire_department</span>
+                            <span>7 Days</span>
+                        </span>
+                    </div>
+                    <p class='brand-subtitle'>
+                        <span id='header-subtitle'>Cambridge Official</span>
+                        <span class='dot'></span>
+                        <span style='color:var(--secondary); font-weight:700;'>Prep Hub</span>
+                    </p>
+                </div>
+            </div>
+            <div class='header-actions'>
+                <button class='header-icon-btn' onclick="switchTab('profile')" aria-label='Filter and Profile Settings' title='Settings'>
+                    <span class='material-symbols-outlined text-[20px]'>tune</span>
+                </button>
+                <div class='avatar-badge-wrap' onclick="switchTab('profile')" title='Candidate Profile &amp; Band Score'>
+                    <div class='avatar-btn'>
+                        <span class='material-symbols-outlined text-[28px]' style="color:var(--primary); font-variation-settings: 'FILL' 1;">account_circle</span>
+                    </div>
+                    <span class='band-score-pill' id='header-band-badge'>7.5</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN BODY CONTAINER -->
+    <main class='app-main'>
+
+        <!-- ========================================== -->
+        <!-- TAB 1: SPEAKING ARCHIVE (Modern Scholastic)-->
+        <!-- ========================================== -->
+        <div id='tab-speaking' class='tab-content'>
+            <div id='speaking-grid-view'>
+
+                <!-- Multi-Level Modern Filter Bar (Years, Books, Parts) -->
+                <div class='filter-section'>
+                    <!-- Row 1: Cambridge Books & Years Filter -->
+                    <div class='filter-scroll-row' id='speaking-year-filters'>
+                        <button class='filter-pill active' onclick='filterSpeakingGrid("all", this)'>All Tests</button>
+                        <button class='filter-pill' onclick='filterSpeakingGrid("2026", this)'>2026 (Cam 20)</button>
+                        <button class='filter-pill' onclick='filterSpeakingGrid("2025", this)'>2025 (Cam 20)</button>
+                        <button class='filter-pill' onclick='filterSpeakingGrid("2024", this)'>2024 (Cam 19)</button>
+                        <button class='filter-pill' onclick='filterSpeakingGrid("2023", this)'>2023 (Cam 18)</button>
+                        <button class='filter-pill' onclick='filterSpeakingGrid("2022", this)'>2022 (Cam 17)</button>
+                        <button class='filter-pill' onclick='filterSpeakingGrid("2021", this)'>2021 (Cam 16)</button>
+                        <button class='filter-pill' onclick='filterSpeakingGrid("2020", this)'>2020 (Cam 15)</button>
+                    </div>
+
+                    <!-- Row 2: Exam Parts Filter -->
+                    <div class='filter-scroll-row'>
+                        <button class='filter-pill active' onclick='filterSpeakingParts("all", this)'>All Parts</button>
+                        <button class='filter-pill' onclick='filterSpeakingParts("part1", this)'>Part 1 Interview</button>
+                        <button class='filter-pill' onclick='filterSpeakingParts("part2", this)'>Part 2 Cue Card</button>
+                        <button class='filter-pill' onclick='filterSpeakingParts("part3", this)'>Part 3 Discussion</button>
+                    </div>
+                </div>
+
+                <!-- True Staggered Grid (Masonry 2-3 columns) -->
+                <div class='staggered-grid' id='speaking-staggered-container'>
+<!-- SPEAKING_CARDS -->
+                </div>
+            </div>
+
+            <!-- Speaking Detail View (Question Sets & Band 9 Answers) -->
+            <div id='speaking-detail-view' class='detail-view'>
+                <div class='detail-top-nav'>
+                    <a class='detail-back-link' onclick='closeSpeakingDetail()'>
+                        <span class='material-symbols-outlined text-[18px]'>arrow_back</span>
+                        <span id='speaking-back-title'>Cambridge Speaking Archive</span>
+                    </a>
+                    <button class='header-icon-btn' onclick="switchTab('call')" title='Practice With Peer'>
+                        <span class='material-symbols-outlined text-[20px]' style='color:var(--secondary);'>phone_in_talk</span>
+                    </button>
+                </div>
+
+                <!-- Overview Card -->
+                <div class='overview-banner-card'>
+                    <div class='overview-meta-row'>
+                        <div class='cambridge-edition-tag'>
+                            <span class='material-symbols-outlined text-[16px]'>school</span>
+                            <span id='speaking-detail-header'>Cambridge Book 20 &#8226; Test 1</span>
+                        </div>
+                        <span class='cambridge-vol-badge'>Exam Edition</span>
+                    </div>
+                    <h2 class='brand-title' style='font-size:1.2rem; margin-bottom:4px;' id='speaking-topic-headline'>Artificial Intelligence &amp; Future Work</h2>
+                    <p style='font-size:12px; color:var(--on-surface-variant);'>Authentic British Council &amp; Cambridge Examination Materials</p>
+                </div>
+
+                <!-- 4 Module Sets Selector (Segmented Pills) -->
+                <div style='margin-bottom:12px;'>
+                    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;'>
+                        <span style='font-size:11px; font-weight:800; text-transform:uppercase; color:var(--on-surface-variant); letter-spacing:0.5px;'>Select Module Set</span>
+                        <span style='font-size:11px; font-weight:700; color:var(--secondary);' id='speaking-active-set-indicator'>Active: Set 1</span>
+                    </div>
+                    <div class='set-pills-container' id='speaking-set-pills'></div>
+                </div>
+
+                <div id='speaking-questions-container'></div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: WRITING ARCHIVE (Modern Scholastic) -->
+        <!-- ========================================== -->
+        <div id='tab-writing' class='tab-content' style='display:none;'>
+            <div id='writing-grid-view'>
+
+                <!-- Multi-Level Filter Bar -->
+                <div class='filter-section'>
+                    <div class='filter-scroll-row'>
+                        <button class='filter-pill active'>All Writing Tasks</button>
+                        <button class='filter-pill'>Task 1 Academic</button>
+                        <button class='filter-pill'>Task 2 Discursive Essay</button>
+                        <button class='filter-pill'>General Training Letters</button>
+                    </div>
+                </div>
+
+                <div class='staggered-grid' id='writing-staggered-container'>
+<!-- WRITING_CARDS -->
+                </div>
+            </div>
+
+            <!-- Writing Detail View -->
+            <div id='writing-detail-view' class='detail-view'>
+                <div class='detail-top-nav'>
+                    <a class='detail-back-link' onclick='closeWritingDetail()'>
+                        <span class='material-symbols-outlined text-[18px]'>arrow_back</span>
+                        <span>Cambridge Writing Archive</span>
+                    </a>
+                </div>
+
+                <div class='overview-banner-card'>
+                    <div class='overview-meta-row'>
+                        <div class='cambridge-edition-tag'>
+                            <span class='material-symbols-outlined text-[16px]'>edit_note</span>
+                            <span id='writing-detail-header'>Cambridge Writing Task</span>
+                        </div>
+                        <span class='cambridge-vol-badge'>Band 9.0 Answers</span>
+                    </div>
+                    <h2 class='brand-title' style='font-size:1.2rem; margin-bottom:4px;' id='writing-topic-headline'>Data Analysis &amp; Discursive Arguments</h2>
+                    <p style='font-size:12px; color:var(--on-surface-variant);'>Official Cambridge Marking Descriptors &amp; Lexical Model Solutions</p>
+                </div>
+
+                <div class='set-pills-container' id='writing-set-pills' style='margin-bottom:12px;'></div>
+                <div id='writing-questions-container'></div>
+
+                <!-- Essay Sandbox -->
+                <div class='academic-card' style='margin-top:16px;'>
+                    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;'>
+                        <h4 style='font-size:0.95rem; font-weight:800; color:var(--primary); display:flex; align-items:center; gap:6px;'>
+                            <span class='material-symbols-outlined text-[20px]'>edit</span> Essay Practice Sandbox
+                        </h4>
+                        <span id='writing-word-count' style='font-size:0.8rem; font-weight:800; color:var(--secondary);'>0 words</span>
+                    </div>
+                    <textarea id='essay-sandbox' placeholder='Type your practice essay or task 1 report here...' oninput='onSandboxInput()' style='width:100%; height:160px; background:var(--surface-container-low); border:1px solid var(--border-soft); border-radius:12px; padding:12px; color:var(--on-surface); font-size:0.92rem; outline:none; resize:vertical; font-family:inherit;'></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: LIVE PEER MATCH & CALL (Sonar Radar)-->
+        <!-- ========================================== -->
+        <div id='tab-call' class='tab-content' style='display:none;'>
+            <div class='call-stage-container'>
+
+                <!-- Sonar Radar Animation & Discovery Disc -->
+                <div class='sonar-radar-box' id='call-radar-disc-box'>
+                    <div class='radar-ring'></div>
+                    <div class='radar-ring radar-ring-1'></div>
+                    <div class='radar-ring radar-ring-2'></div>
+
+                    <div class='radar-avatar-disc'>
+                        <span class='material-symbols-outlined text-[44px]' style='color:var(--primary); font-weight:300;'>person</span>
+                        <span class='live-ping-dot'></span>
+                    </div>
+                </div>
+
+                <!-- Matchmaking Status & Counter -->
+                <div style='margin-bottom:16px;'>
+                    <div style='display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:9999px; background:rgba(0,108,73,0.1); color:var(--secondary); font-size:11px; font-weight:700; margin-bottom:6px;'>
+                        <span class='material-symbols-outlined text-[14px] animate-spin'>sync</span>
+                        <span>Connecting peers...</span>
+                    </div>
+                    <h2 class='brand-title' style='font-size:1.25rem;' id='call-status-heading'>Searching for Speaking Partners</h2>
+                    <p style='font-size:12px; color:var(--on-surface-variant); margin-top:3px;' id='call-partner-meta'>
+                        Matching by Target Band <span style='font-weight:700; color:var(--primary);'>7.0 – 8.5</span> &amp; Cambridge Cue Cards
+                    </p>
+                    <div style='display:flex; align-items:center; justify-content:center; gap:6px; font-size:11px; color:var(--on-surface-variant); margin-top:8px;'>
+                        <span style='width:6px; height:6px; border-radius:50%; background:#10b981;'></span>
+                        <span><strong style='color:var(--on-surface); font-weight:700;'>48 candidates</strong> currently active</span>
+                    </div>
+                    <div class='call-duration' id='call-timer-display' style='display:none; font-family:monospace; font-size:1.4rem; font-weight:800; color:var(--secondary); margin-top:10px;'>00:00</div>
+                </div>
+
+                <!-- Animated Waveform for Active Audio -->
+                <div class='waveform-container' id='call-waveform-box' style='display:none;'>
+                    <div class='waveform-bar'></div>
+                    <div class='waveform-bar'></div>
+                    <div class='waveform-bar'></div>
+                    <div class='waveform-bar'></div>
+                    <div class='waveform-bar'></div>
+                </div>
+
+                <!-- Searching Controls Row -->
+                <div id='searching-controls-row' style='display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-bottom:14px;'>
+                    <button class='filter-pill active' onclick='startRandomMatchmaking()' style='display:flex; align-items:center; gap:6px; padding:10px 16px; font-size:13px;'>
+                        <span class='material-symbols-outlined text-[18px]'>autorenew</span> Find Random Partner
+                    </button>
+                    <button class='filter-pill' onclick='cancelMatchmaking()' style='color:var(--error); border-color:rgba(186,26,26,0.3); display:flex; align-items:center; gap:6px; padding:10px 14px;'>
+                        <span class='material-symbols-outlined text-[18px]'>close</span> Cancel Search
+                    </button>
+                    <button class='filter-pill' onclick='toggleIdControls()' style='display:flex; align-items:center; gap:6px; padding:10px 14px;'>
+                        <span class='material-symbols-outlined text-[18px]'>dialpad</span> Call By ID
+                    </button>
+                </div>
+
+                <!-- ID Controls Card (Toggled via Call by ID) -->
+                <div class='modal-card' id='id-controls-panel' style='display:none; margin:0 auto 16px auto; text-align:left;'>
+                    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>
+                        <span style='font-size:12px; font-weight:800; color:var(--primary);'>Your Permanent Call ID:</span>
+                        <span style='font-size:10px; color:var(--secondary); font-weight:700;'>● Persistent Across Sessions</span>
+                    </div>
+                    <div style='background:var(--surface-container-low); border:1px solid var(--border-soft); border-radius:10px; padding:10px 14px; font-family:monospace; font-weight:800; color:var(--primary); font-size:14px; margin-bottom:10px; word-break:break-all;' id='my-peer-id-text'>ielts-...</div>
+                    <div style='display:flex; gap:8px; margin-bottom:14px;'>
+                        <button class='filter-pill' onclick='copyPermanentId()' style='flex:1; justify-content:center; display:flex; align-items:center; gap:4px;'><span class='material-symbols-outlined text-[16px]'>content_copy</span> Copy ID</button>
+                        <button class='filter-pill' onclick='sharePermanentId()' style='flex:1; justify-content:center; background:var(--primary); color:white; border-color:var(--primary); display:flex; align-items:center; gap:4px;'><span class='material-symbols-outlined text-[16px]'>share</span> Share Link</button>
+                    </div>
+
+                    <div style='border-top:1px solid var(--border-soft); padding-top:12px;'>
+                        <span style='font-size:12px; font-weight:800; color:var(--on-surface); display:block; margin-bottom:6px;'>Call Partner by Permanent ID:</span>
+                        <input type='text' id='partner-id-input' placeholder='Paste partner permanent ID here (e.g. ielts-4X9B21)' style='width:100%; padding:10px 12px; background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:10px; color:var(--on-surface); font-family:monospace; margin-bottom:8px; outline:none;'/>
+                        <button onclick='startOutgoingCallManual()' style='width:100%; padding:10px; background:var(--primary); color:white; border:none; border-radius:10px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;'>
+                            <span class='material-symbols-outlined text-[18px]'>phone</span> Direct Call
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Connected In-Call Floating Control Pill -->
+                <div class='floating-call-pill' id='call-in-progress-controls' style='display:none;'>
+                    <!-- Microphone Mute / Unmute -->
+                    <button class='call-action-circle primary-mic' id='call-mute-btn' onclick='toggleCallMute()' title='Mute Microphone'>
+                        <span class='material-symbols-outlined text-[22px] material-symbols-fill'>mic</span>
+                    </button>
+                    <!-- In-Call Live Chat -->
+                    <button class='call-action-circle secondary-tool' onclick='openInCallChatSheet()' title='In-Call Live Chat' style='position:relative;'>
+                        <span class='material-symbols-outlined text-[20px]'>chat</span>
+                        <span id='call-unread-badge' style='display:none; position:absolute; top:8px; right:8px; width:8px; height:8px; border-radius:50%; background:var(--secondary);'></span>
+                    </button>
+                    <!-- Switch Partner / Next Peer -->
+                    <button class='skip-peer-btn' onclick='nextRandomPartner()' title='Skip to next peer'>
+                        <span class='material-symbols-outlined text-[18px]'>skip_next</span>
+                        <span>Next Peer</span>
+                    </button>
+                    <!-- Save Partner -->
+                    <button class='call-action-circle secondary-tool' onclick='saveCurrentPartnerToContacts()' title='Save Contact'>
+                        <span class='material-symbols-outlined text-[20px]'>bookmark_add</span>
+                    </button>
+                    <!-- End Call (Crimson Minimal) -->
+                    <button class='call-action-circle end-crimson' onclick='hangupActiveCall()' title='End Call'>
+                        <span class='material-symbols-outlined text-[20px] material-symbols-fill'>call_end</span>
+                    </button>
+                </div>
+
+                <!-- In-Call Practice Topic Cue Card Carousel -->
+                <div class='academic-card' id='incall-carousel-section' style='display:none; margin-top:16px; text-align:left;'>
+                    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>
+                        <span style='font-size:11px; font-weight:800; color:var(--primary);' id='carousel-year-title'>Active Speaking Card</span>
+                        <button class='filter-pill' onclick='toggleSidebarDrawer()' style='padding:3px 8px; font-size:11px;'>Change Cambridge Test</button>
+                    </div>
+                    <div id='carousel-card-body' style='font-size:13px; color:var(--on-surface); line-height:1.4;'></div>
+                    <div style='display:flex; justify-content:space-between; margin-top:8px;'>
+                        <button class='filter-pill' onclick='carouselPrev()'>Previous</button>
+                        <button class='filter-pill' onclick='carouselNext()'>Next</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- SIDEBAR DRAWER: In-Call Cambridge Question Year Picker -->
+        <div class='modal-overlay' id='incall-sidebar-drawer'>
+            <div class='modal-card' style='max-width:320px;'>
+                <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;'>
+                    <h3 style='font-size:1rem; font-weight:800; color:var(--primary);'>Cambridge Speaking Tests</h3>
+                    <button onclick='toggleSidebarDrawer()' style='background:none; border:none; color:var(--on-surface-variant); cursor:pointer;'><span class='material-symbols-outlined text-[20px]'>close</span></button>
+                </div>
+                <div id='sidebar-years-list' style='max-height:360px; overflow-y:auto;' class='space-y-1'></div>
+            </div>
+        </div>
+
+        <!-- IN-CALL CHAT BOTTOM SHEET -->
+        <div class='modal-overlay' id='incall-chat-sheet'>
+            <div class='modal-card' style='max-width:440px;'>
+                <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;'>
+                    <div>
+                        <h3 style='font-size:0.95rem; font-weight:800; color:var(--primary);'>Live In-Call Chat</h3>
+                        <span style='font-size:11px; color:var(--secondary); font-weight:600;'>Delivered directly to practice partner</span>
+                    </div>
+                    <button onclick='closeInCallChatSheet()' style='background:none; border:none; color:var(--on-surface-variant); cursor:pointer;'><span class='material-symbols-outlined text-[20px]'>close</span></button>
+                </div>
+                <div id='incall-chat-feed' style='height:240px; overflow-y:auto; padding:8px; background:var(--surface-container-low); border-radius:12px; margin-bottom:10px;'></div>
+                <div style='display:flex; gap:8px;'>
+                    <input type='text' id='incall-msg-input' placeholder='Type message...' onkeydown='if(event.key==="Enter")sendInCallMessage()' style='flex:1; padding:10px 12px; background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:10px; color:var(--on-surface); outline:none;'/>
+                    <button onclick='sendInCallMessage()' style='padding:10px 16px; background:var(--primary); color:white; border:none; border-radius:10px; font-weight:700; cursor:pointer;'><span class='material-symbols-outlined text-[18px]'>send</span></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 4: DIRECT 1-ON-1 CHAT (Messages Screen)-->
+        <!-- ========================================== -->
+        <div id='tab-chat' class='tab-content' style='display:none;'>
+            <!-- Contacts List View -->
+            <div id='direct-contacts-view'>
+                <!-- Permanent ID Banner in Chat -->
+                <div class='academic-card' style='margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;'>
+                    <div>
+                        <div style='font-size:11px; color:var(--on-surface-variant); font-weight:700;'>Your Permanent Candidate ID:</div>
+                        <div style='font-family:monospace; font-size:1.05rem; font-weight:800; color:var(--primary);' id='chat-my-permanent-id'>ielts-...</div>
+                    </div>
+                    <button class='filter-pill active' onclick='copyPermanentId()'><span class='material-symbols-outlined text-[16px]'>content_copy</span> Copy</button>
+                </div>
+
+                <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;'>
+                    <div>
+                        <h2 class='brand-title' style='font-size:1.15rem;'>Direct Practice Messages</h2>
+                        <p style='font-size:12px; color:var(--on-surface-variant);'>1-on-1 persistent conversations with study partners</p>
+                    </div>
+                    <button class='filter-pill active' onclick='openAddPartnerModal()'>
+                        <span class='material-symbols-outlined text-[16px]'>person_add</span> Add Partner
+                    </button>
+                </div>
+
+                <!-- Empty State -->
+                <div id='direct-empty-state' class='academic-card' style='display:none; text-align:center; padding:36px 16px;'>
+                    <div style='width:64px; height:64px; border-radius:50%; background:var(--surface-container); display:flex; align-items:center; justify-content:center; margin:0 auto 12px auto; color:var(--primary);'>
+                        <span class='material-symbols-outlined text-[32px]'>chat_bubble_outline</span>
+                    </div>
+                    <h3 style='font-size:1rem; font-weight:800; color:var(--primary); margin-bottom:4px;'>No Direct Chats Yet</h3>
+                    <p style='font-size:12px; color:var(--on-surface-variant); max-width:320px; margin:0 auto 16px auto;'>
+                        Connect with an IELTS study partner using their Candidate ID or save them from Live Match.
+                    </p>
+                    <button class='filter-pill active' onclick='openAddPartnerModal()'>Add Practice Partner</button>
+                </div>
+
+                <div id='direct-contacts-list'></div>
+            </div>
+
+            <!-- Direct 1-on-1 Conversation Window -->
+            <div id='direct-chat-window' class='detail-view'>
+                <div style='display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border-soft); margin-bottom:12px;'>
+                    <div style='display:flex; align-items:center; gap:10px;'>
+                        <a class='detail-back-link' onclick='closeDirectChatWindow()'>
+                            <span class='material-symbols-outlined text-[18px]'>arrow_back</span>
+                        </a>
+                        <div>
+                            <h3 style='font-size:1rem; font-weight:800; color:var(--primary);' id='chat-window-name'>Partner</h3>
+                            <span style='font-size:11px; color:var(--secondary); font-weight:700;' id='chat-window-status'>ID: ielts-...</span>
+                        </div>
+                    </div>
+                    <div style='display:flex; gap:6px;'>
+                        <button onclick='callCurrentChatPartner()' class='filter-pill active' style='padding:6px 12px; display:flex; align-items:center; gap:4px;'><span class='material-symbols-outlined text-[16px]'>phone</span> Call</button>
+                        <button onclick='deleteCurrentChat()' class='filter-pill' style='color:var(--error); border-color:rgba(186,26,26,0.3); padding:6px 10px;' title='Delete Chat'><span class='material-symbols-outlined text-[16px]'>delete</span></button>
+                    </div>
+                </div>
+
+                <div id='direct-chat-feed' style='height:360px; overflow-y:auto; padding:10px; background:var(--surface-container-low); border-radius:14px; margin-bottom:12px;'></div>
+
+                <div style='display:flex; gap:8px;'>
+                    <input type='text' id='direct-msg-input' placeholder='Type message here...' onkeydown='if(event.key==="Enter")sendDirectMsg()' style='flex:1; padding:12px 14px; background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:12px; color:var(--on-surface); outline:none;'/>
+                    <button onclick='sendDirectMsg()' style='padding:12px 18px; background:var(--primary); color:white; border:none; border-radius:12px; font-weight:700; cursor:pointer;'><span class='material-symbols-outlined text-[20px]'>send</span></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 5: CANDIDATE PROFILE (Modern Bento)    -->
+        <!-- ========================================== -->
+        <div id='tab-profile' class='tab-content' style='display:none;'>
+
+            <!-- 1. Candidate Profile Header Card -->
+            <div class='academic-card' style='margin-bottom:14px; position:relative; overflow:hidden;'>
+                <div style='display:flex; align-items:center; justify-content:space-between;'>
+                    <div style='display:flex; align-items:center; gap:14px;'>
+                        <!-- Avatar with online ring -->
+                        <div class='radar-avatar-disc' style='width:64px; height:64px; border-width:2px;'>
+                            <span class='material-symbols-outlined text-[36px]' style='color:var(--primary); font-weight:300;'>person</span>
+                            <span class='live-ping-dot' style='width:12px; height:12px;'></span>
+                        </div>
+                        <div>
+                            <div style='display:flex; align-items:center; gap:6px;'>
+                                <h2 class='brand-title' style='font-size:1.15rem;' id='prof-display-name'>Jhan Student</h2>
+                                <span class='material-symbols-outlined text-[18px]' style='color:var(--secondary); font-variation-settings: "FILL" 1;'>verified</span>
+                            </div>
+                            <p style='font-size:12px; color:var(--on-surface-variant);' id='prof-display-country'>Vietnam • Target Band 7.5</p>
+                        </div>
+                    </div>
+                    <button class='header-icon-btn' onclick='toggleEditProfileForm()' title='Edit Profile'>
+                        <span class='material-symbols-outlined text-[18px]'>edit</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 2. Permanent Candidate ID Card (Exclusive to Profile Screen) -->
+            <div class='academic-card' style='margin-bottom:14px;'>
+                <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;'>
+                    <span style='font-size:12px; font-weight:800; color:var(--primary); display:flex; align-items:center; gap:6px;'>
+                        <span class='material-symbols-outlined text-[18px]'>fingerprint</span> Permanent Candidate ID
+                    </span>
+                    <button class='filter-pill' onclick='toggleEditCustomId()' style='padding:3px 8px; font-size:11px;'>Edit Custom ID</button>
+                </div>
+                <div style='font-family:monospace; font-size:1.25rem; font-weight:800; color:var(--primary); margin:6px 0;' id='prof-permanent-id-text'>ielts-...</div>
+                <p style='font-size:11px; color:var(--on-surface-variant); margin-bottom:10px;'>Share this permanent ID with study partners to receive direct calls and messages anytime.</p>
+
+                <div id='edit-custom-id-box' style='display:none; margin-bottom:10px;'>
+                    <input type='text' id='custom-id-input' placeholder='Set custom ID (e.g. ielts-john2026)' style='width:100%; padding:10px; background:var(--surface-container-low); border:1px solid var(--outline-variant); border-radius:10px; color:var(--on-surface); font-family:monospace; margin-bottom:8px; outline:none;'/>
+                    <button onclick='saveCustomPermanentId()' class='filter-pill active' style='width:100%;'>Save New Permanent ID</button>
+                </div>
+
+                <div style='display:flex; gap:8px;'>
+                    <button class='filter-pill' onclick='copyPermanentId()' style='flex:1; justify-content:center; display:flex; align-items:center; gap:4px;'><span class='material-symbols-outlined text-[16px]'>content_copy</span> Copy ID</button>
+                    <button class='filter-pill' onclick='sharePermanentId()' style='flex:1; justify-content:center; background:var(--primary); color:white; border-color:var(--primary); display:flex; align-items:center; gap:4px;'><span class='material-symbols-outlined text-[16px]'>share</span> Share Link</button>
+                </div>
+            </div>
+
+            <!-- 3. Key Stats Bento Row -->
+            <div style='display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-bottom:14px;'>
+                <div class='bento-stat-card'>
+                    <span class='material-symbols-outlined text-[18px]' style='color:var(--primary); margin-bottom:2px;'>schedule</span>
+                    <span class='bento-stat-val'>14h 25m</span>
+                    <span class='bento-stat-lbl'>Call Time</span>
+                </div>
+                <div class='bento-stat-card'>
+                    <span class='material-symbols-outlined text-[18px]' style='color:var(--secondary); margin-bottom:2px;'>quiz</span>
+                    <span class='bento-stat-val'>38</span>
+                    <span class='bento-stat-lbl'>Mocks Taken</span>
+                </div>
+                <div class='bento-stat-card'>
+                    <span class='material-symbols-outlined text-[18px]' style='color:var(--streak-amber); margin-bottom:2px;'>emoji_events</span>
+                    <span class='bento-stat-val' id='prof-bento-band'>7.5</span>
+                    <span class='bento-stat-lbl'>Goal Band</span>
+                </div>
+                <div class='bento-stat-card'>
+                    <span class='material-symbols-outlined text-[18px]' style='color:var(--streak-amber); margin-bottom:2px;'>local_fire_department</span>
+                    <span class='bento-stat-val'>7d</span>
+                    <span class='bento-stat-lbl'>Streak</span>
+                </div>
+            </div>
+
+            <!-- 4. Profile Details Form Card -->
+            <div class='academic-card' id='prof-form-card' style='margin-bottom:14px;'>
+                <h3 style='font-size:1rem; font-weight:800; color:var(--primary); margin-bottom:12px;'>Candidate Settings</h3>
+
+                <label style='display:block; font-size:12px; font-weight:700; color:var(--on-surface-variant); margin-bottom:4px;'>Full Name</label>
+                <input type='text' id='prof-name-input' value='Jhan Student' style='width:100%; padding:10px 12px; background:var(--surface-container-low); border:1px solid var(--outline-variant); border-radius:10px; color:var(--on-surface); margin-bottom:12px; outline:none;'/>
+
+                <label style='display:block; font-size:12px; font-weight:700; color:var(--on-surface-variant); margin-bottom:4px;'>Age</label>
+                <input type='number' id='prof-age-input' value='23' style='width:100%; padding:10px 12px; background:var(--surface-container-low); border:1px solid var(--outline-variant); border-radius:10px; color:var(--on-surface); margin-bottom:12px; outline:none;'/>
+
+                <label style='display:block; font-size:12px; font-weight:700; color:var(--on-surface-variant); margin-bottom:4px;'>Country / Region</label>
+                <input type='text' id='prof-country-input' value='Vietnam' style='width:100%; padding:10px 12px; background:var(--surface-container-low); border:1px solid var(--outline-variant); border-radius:10px; color:var(--on-surface); margin-bottom:12px; outline:none;'/>
+
+                <label style='display:block; font-size:12px; font-weight:700; color:var(--on-surface-variant); margin-bottom:4px;'>Gender</label>
+                <div style='display:flex; gap:6px; margin-bottom:12px;' id='gender-chips-container'>
+                    <button type='button' class='filter-pill active' onclick='setGender("Male")'>Male</button>
+                    <button type='button' class='filter-pill' onclick='setGender("Female")'>Female</button>
+                    <button type='button' class='filter-pill' onclick='setGender("Other")'>Other</button>
+                </div>
+
+                <label style='display:block; font-size:12px; font-weight:700; color:var(--on-surface-variant); margin-bottom:4px;'>Target Band Score</label>
+                <div style='display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;' id='band-chips-container'>
+                    <button type='button' class='filter-pill' onclick='setTargetBand("Band 6.5")'>Band 6.5</button>
+                    <button type='button' class='filter-pill' onclick='setTargetBand("Band 7.0")'>Band 7.0</button>
+                    <button type='button' class='filter-pill active' onclick='setTargetBand("Band 7.5")'>Band 7.5</button>
+                    <button type='button' class='filter-pill' onclick='setTargetBand("Band 8.0")'>Band 8.0</button>
+                    <button type='button' class='filter-pill' onclick='setTargetBand("Band 8.5")'>Band 8.5</button>
+                    <button type='button' class='filter-pill' onclick='setTargetBand("Band 9.0")'>Band 9.0</button>
+                </div>
+
+                <button onclick='saveCandidateProfile()' class='filter-pill active' style='width:100%; padding:12px; font-size:14px; justify-content:center;'>
+                    Save Candidate Profile
+                </button>
+            </div>
+
+            <!-- 5. Academic Resources Menu -->
+            <div class='academic-card' style='padding:8px 12px;'>
+                <div style='display:flex; align-items:center; gap:10px; padding:10px 4px; border-bottom:1px solid var(--surface-container);'>
+                    <span class='material-symbols-outlined text-[20px]' style='color:var(--primary);'>auto_stories</span>
+                    <span style='flex:1; font-weight:700; font-size:13px;'>Cambridge Official Archives (2001–2026)</span>
+                    <span class='cambridge-vol-badge'>26 Years</span>
+                </div>
+                <div style='display:flex; align-items:center; gap:10px; padding:10px 4px; border-bottom:1px solid var(--surface-container);'>
+                    <span class='material-symbols-outlined text-[20px]' style='color:var(--secondary);'>support_agent</span>
+                    <span style='flex:1; font-weight:700; font-size:13px;'>Tutor &amp; Candidate Support Help</span>
+                </div>
+                <div style='display:flex; align-items:center; gap:10px; padding:10px 4px;'>
+                    <span class='material-symbols-outlined text-[20px]' style='color:var(--on-surface-variant);'>tune</span>
+                    <span style='flex:1; font-weight:700; font-size:13px;'>Audio &amp; PeerJS WebRTC Diagnostics</span>
+                    <span style='font-size:11px; color:var(--secondary); font-weight:700;'>Online</span>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- MODAL: ADD PRACTICE PARTNER BY PERMANENT ID -->
+    <div class='modal-overlay' id='add-partner-modal'>
+        <div class='modal-card'>
+            <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;'>
+                <h3 style='font-size:1.05rem; font-weight:800; color:var(--primary); display:flex; align-items:center; gap:6px;'>
+                    <span class='material-symbols-outlined text-[20px]'>person_add</span> Add Practice Partner
+                </h3>
+                <button onclick='closeAddPartnerModal()' style='background:none; border:none; color:var(--on-surface-variant); cursor:pointer;'><span class='material-symbols-outlined text-[20px]'>close</span></button>
+            </div>
+            <p style='font-size:12px; color:var(--on-surface-variant); margin-bottom:12px;'>Enter the permanent IELTS Candidate ID of your partner to start direct persistent messaging and calling.</p>
+            <input type='text' id='new-partner-id-input' placeholder='e.g. ielts-4X9B21' style='width:100%; padding:10px 12px; background:var(--surface-container-low); border:1px solid var(--outline-variant); border-radius:10px; color:var(--on-surface); font-family:monospace; margin-bottom:8px; outline:none;'/>
+            <input type='text' id='new-partner-name-input' placeholder="Partner Name / Nickname (optional)" style='width:100%; padding:10px 12px; background:var(--surface-container-low); border:1px solid var(--outline-variant); border-radius:10px; color:var(--on-surface); margin-bottom:8px; outline:none;'/>
+            <input type='text' id='new-partner-band-input' placeholder="Target Band (optional, default Band 7.5)" style='width:100%; padding:10px 12px; background:var(--surface-container-low); border:1px solid var(--outline-variant); border-radius:10px; color:var(--on-surface); margin-bottom:14px; outline:none;'/>
+            <button onclick='saveNewPartner()' class='filter-pill active' style='width:100%; padding:12px; justify-content:center;'>Save Partner</button>
+        </div>
+    </div>
+
+    <!-- DOCKED BOTTOM NAVIGATION (Speaking, Writing, Live Call, Direct Chat, Profile) -->
+    <nav class='bottom-nav'>
+        <a class='nav-item active' id='nav-speaking' onclick="switchTab('speaking')">
+            <span class='material-symbols-outlined'>record_voice_over</span>
+            <span>Speaking</span>
+        </a>
+        <a class='nav-item' id='nav-writing' onclick="switchTab('writing')">
+            <span class='material-symbols-outlined'>edit_note</span>
+            <span>Writing</span>
+        </a>
+        <a class='nav-item' id='nav-call' onclick="switchTab('call')">
+            <div style='position:relative;'>
+                <span class='material-symbols-outlined'>call</span>
+                <span style='position:absolute; top:0; right:-2px; width:7px; height:7px; border-radius:50%; background:var(--secondary);'></span>
+            </div>
+            <span>Live Call</span>
+        </a>
+        <a class='nav-item' id='nav-chat' onclick="switchTab('chat')">
+            <span class='material-symbols-outlined'>chat</span>
+            <span>Messages</span>
+        </a>
+        <a class='nav-item' id='nav-profile' onclick="switchTab('profile')">
+            <span class='material-symbols-outlined'>person</span>
+            <span>Profile</span>
+        </a>
+    </nav>
+
+    <!-- GLOBAL FLOATING TOAST -->
+    <div id='global-toast' class='toast-popup'></div>
+
+    <!-- HIDDEN AUDIO TAG FOR PEERJS AUDIO STREAM -->
+    <audio id='remoteAudio' autoplay='autoplay'></audio>
+</div>
